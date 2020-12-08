@@ -1,0 +1,6 @@
+account = "tioantawibawa"
+caption = "test aja"
+time = 4
+post_date = 20201104
+variable = "picture"
+usertags_post = "@astriani"

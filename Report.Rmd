@@ -1,0 +1,482 @@
+
+---
+title: "Instagram User report"
+params:
+  account: NA
+  compare: compare
+  nTerms: NA
+output: html_document
+---
+
+```{r eval = FALSE, echo = FALSE}
+# For PDF output, change the header to have "output: pdf_document".
+#
+# Note that due to an issue in rmarkdown, the default value of a parameter in
+# the header cannot be `NULL`, so I used a default of `NA` for the default value
+# of `n`.
+```
+
+
+```{r}
+# User yang digunakan.
+params$account
+
+```
+
+
+
+```{r setup,include=FALSE}
+knitr::opts_knit$set(root.dir = 'D:/R project/instagram/isntagram/')
+## setwd(gsub(pattern = '/isntagram', replacement = '', x = getwd()))
+akun <- params$account
+#akun <- "erikridha"
+library(plotly)
+library(knitr)
+library(DT)
+library(twitteR)
+library(katadasaR)
+library(twitteR) ### for fetching the tweets
+library(plyr) ## for breaking the data into manageable pieces
+library(ROAuth) # for R authentication
+library(stringr) # for string processing
+library(ggplot2) # for plotting the results
+library(tm)
+library(wordcloud)
+library(leaflet)
+library(NLP)
+library(RColorBrewer)
+library(topicmodels)
+library(SnowballC)
+library(igraph)
+library(stringr)
+library(sna)
+library(dplyr)
+library(lubridate)
+library(network)
+library(twitteR)
+library(dplyr)
+library(networkD3)
+library(igraph)
+library(stringr) 
+library(reshape2)
+library(tidyquant) 
+library(textclean)
+library(katadasaR)
+library(tokenizers)
+library(dplyr)
+library(data.table)
+library(LDAvis)
+library(text2vec)
+library(Rgraphviz)
+library(cli)
+library(rmarkdown)
+
+```
+
+```{r, include=FALSE}
+library(jsonlite)
+library(stringr)
+library("jpeg")
+library(tidyr)
+library(utf8)
+library(data.table)
+
+instagram <- function(account)
+{
+  url_awal <- str_glue("http://www.instagram.com/{account}/?__a=1")
+  json_awal <- fromJSON(url_awal)
+  userid <- json_awal$graphql$user$id
+  hitung <- json_awal$graphql$user$edge_owner_to_timeline_media$count
+  url_start <- str_glue("https://www.instagram.com/graphql/query/?query_id=17888483320059182&variables=%7B%22id%22:%22{userid}%22,%22first%22:{hitung},%22after%22:null%7D")
+  
+  edge_hashtag_to_media_awal <- json_awal$graphql$user$edge_owner_to_timeline_media
+  end_cursor_awal <- edge_hashtag_to_media_awal$page_info$end_cursor
+  posts_awal <- edge_hashtag_to_media_awal$edges$node
+  
+  json <- fromJSON(url_start)
+  edge_hashtag_to_media <- json$data$user$edge_owner_to_timeline_media$edges
+  end_cursor <- edge_hashtag_to_media$page_info$end_cursor
+  posts <- edge_hashtag_to_media$node 
+if(!is.null(posts))  
+{
+  hitung <- length(posts$id)
+  count <- data.frame(rep(json_awal$graphql$user$edge_followed_by$count,hitung))
+  username <- data.frame(rep(json_awal$graphql$user$username,hitung))
+  foto <- data.frame(rep(json_awal$graphql$user$profile_pic_url,hitung))
+  userid <- data.frame(rep(json_awal$graphql$user$id,hitung))
+  facebook <-data.frame(rep(ifelse(is.null(json_awal$graphql$user$connected_fb_page),0,1),hitung))
+  follow <- data.frame(rep(json_awal$graphql$user$edge_follow$count,hitung))
+  followed <- data.frame(rep(json_awal$graphql$user$edge_followed_by$count,hitung))
+  biografi <- data.frame(rep(json_awal$graphql$user$biography,hitung))
+  verified <- data.frame(rep(json_awal$graphql$user$is_verified,hitung))
+  private <- data.frame(rep(json_awal$graphql$user$is_private,hitung))
+  is.na(posts$edge_media_to_caption$edges) <- sapply(posts$edge_media_to_caption$edges, length) == 0
+  caption <- unlist(posts$edge_media_to_caption$edges)
+  names(caption) <- "caption"
+  komentar <- posts$edge_media_to_comment
+  names(komentar) <- "jmlkomentar"
+  comments_disabled <- data.frame(posts$comments_disabled)
+  tanggal <-data.frame(as.Date(as.POSIXct(posts$taken_at_timestamp, origin="1970-01-01"),format ="yyyy-mm-dd"))
+  time <- hour(as.ITime(as.POSIXct(posts$taken_at_timestamp, origin="1970-01-01")))
+  likes <- as.data.frame(posts$edge_media_preview_like)
+  video <- data.frame(posts$is_video)
+  jenisupdate <- data.frame(posts$`__typename`)
+  namalengkap <- data.frame(rep(json_awal$graphql$user$full_name,hitung))
+  
+  tabel <- cbind(username,foto,count,
+                 userid,
+                 facebook,
+                 follow,
+                 followed,
+                 biografi,
+                 verified,
+                 private,
+                 caption,
+                 komentar,
+                 comments_disabled,
+                 tanggal,
+                 time,
+                 likes,
+                 video,
+                 jenisupdate,
+                 namalengkap)
+  
+  colnames(tabel) <- c("username","foto","count",
+                       "userid",
+                       "facebook",
+                       "following",
+                       "followed",
+                       "biografi",
+                       "verified",
+                       "private",
+                       "caption",
+                       "komentar",
+                       "comments_disabled",
+                       "tanggal",
+                       "time",
+                       "likes",
+                       "video",
+                       "jenisupdate",
+                       "namalengkap") 
+  return(tabel)
+}
+  else {return("user lock")}
+
+}
+```
+
+
+```{r,  include=FALSE}
+ #  df_instagram <- instagram(paste0("",akun))
+#    df_instagram <- as.data.frame(df_instagram)
+  df_topics <- df[df$label=="good",]
+    caption_txt = df_topics$usertags
+ file_stop <- file("helper/id.stopwords.02.01.2016.txt",open = "r")
+    id_stopwords <- readLines(file_stop)
+    close(file_stop)
+    id_stopwords = c(id_stopwords, "amp")
+    stopwordku <- read.table("helper/id.stopwords.02.01.2016.txt")
+    tambahan <- c("yaa","utk","gimana","ini","untuk","nih","mestinya","lho","klo","kalo","Tks","yg","dpt","and","the","not","you","for","but","suka","with","just","all")
+    removeURL <- function(x) gsub("http[^[:space:]]*", "", x)
+    
+    caption_txt <- sapply(caption_txt,function(row) iconv(row, "latin1", "ASCII", sub=""))
+    caption_txt <- caption_txt %>% 
+      replace_html() %>% # replace html with blank 
+      replace_url() 
+    caption_txt <- caption_txt %>% 
+      replace_emoji(.) %>% 
+      replace_html(.)
+    caption_txt <- caption_txt %>% 
+      replace_tag(caption_txt, pattern = "@([A-Za-z0-9_]+)",replacement="") %>%  # remove mentions
+      replace_hash(caption_txt, pattern = "#([A-Za-z0-9_]+)",replacement="")      # remove hashtags
+    
+    caption_txt <- gsub( "\n"," ",caption_txt)
+    
+    stemming <- function(x){
+      paste(lapply(x,katadasar),collapse = " ")}
+    caption_txt <- lapply(tokenize_words(caption_txt[]), stemming)
+    
+    corpusbri <- Corpus(VectorSource(caption_txt))
+    corpusbri <- tm_map(corpusbri, content_transformer(removeURL))
+    corpusbri <- tm_map(corpusbri, removePunctuation)
+    corpusbri <- tm_map(corpusbri,content_transformer(tolower))
+    corpusbri <- tm_map(corpusbri, removeWords, as.character(stopwordku$V1))
+    corpusbri <- tm_map(corpusbri, removeWords, tambahan)
+    corpusbri <- tm_map(corpusbri, removeWords, id_stopwords)
+    corpusbri <- tm_map(corpusbri, removeNumbers)
+    corpusbri <- tm_map(corpusbri, stripWhitespace)
+    #corpusbri <- tm_map(corpusbri, stemDocument)
+    doc.lengths <- rowSums(as.matrix(DocumentTermMatrix(corpusbri)))
+    dtm_tm <- DocumentTermMatrix(corpusbri[doc.lengths > 0])
+    control <- list(burnin = 500, iter = 1000, keep = 100)
+    control[["seed"]] <- 100
+    lda_model <- LDA(dtm_tm, k=as.numeric(3), method = "Gibbs", 
+                     control = control)
+    lda_model.topics <- as.matrix(topics(lda_model))
+    lda_model.terms <- as.matrix(terms(lda_model,6))
+    dtmtio = DocumentTermMatrix(corpusbri)
+    tdmtio = TermDocumentMatrix(corpusbri)
+    
+    term <- terms(lda_model, 7)
+    topics2 <- topics(lda_model)
+    df_topics <- df[df$label=="good",]
+    topics2 <- if (length(as.numeric(names(doc.lengths[doc.lengths==0])))==0) {
+      data.frame(date=as.IDate(x = df_topics$date_posting), topic=topics2)
+    } else {data.frame(date=as.IDate(df_topics$date_posting[-as.numeric(names(doc.lengths[doc.lengths==0]))]), topic=topics2)}
+    
+    
+    #kata yang sering digunakan
+    term.freq <- rowSums(as.matrix(tdmtio))
+    term.freq2 <- subset(term.freq, term.freq > as.numeric(head(sort(term.freq,decreasing=TRUE), n = 20)[20]))
+    kataygdigunakan <- data.frame(term = names(term.freq2), freq = term.freq2)
+    
+    topics <- topicmodels::posterior(lda_model, dtm_tm)[["topics"]]  
+    topic_dat <- apply(terms(lda_model, 5), 2, paste, collapse = ", ")
+    df <- tibble::rownames_to_column(data.frame(topic_dat), "Cluster")
+    names(df)[2] <- "Topics"
+    #lda <- LDA(dtm_tm, k=5)
+    term <- terms(lda_model, 7)
+    posText <- read.delim("helper/positive.txt", header=FALSE, stringsAsFactors=FALSE)
+    posText <- posText$V1
+    posText <- unlist(lapply(posText, function(x) { str_split(x, "\n") }))
+    negText <- read.delim("helper/negative.txt", header=FALSE, stringsAsFactors=FALSE)
+    negText <- negText$V1
+    negText <- unlist(lapply(negText, function(x) { str_split(x, "\n") }))
+    pos.words = c(posText, 'upgrade')
+    neg.words = c(negText, 'wtf', 'wait', 'waiting','epicfail', 'mechanical')
+    scores = score.sentiment(caption_txt, pos.words,neg.words , .progress='text')
+    scores$positive <- as.numeric(scores$score >0)
+    scores$negative <- as.numeric(scores$score >0)
+    scores$neutral <- as.numeric(scores$score==0)
+    scores$polarity <- ifelse(scores$score >0,"positive",ifelse(scores$score < 0,"negative",ifelse(scores$score==0,"Neutral",0)))
+    scores_plot <- qplot(factor(polarity), data=scores[scores$score!=0,], geom="bar", fill=factor(polarity))+xlab("Polarity Categories") + ylab("Frequency") + ggtitle("Customer Sentiments - Bank BRI")
+    # scores_plot
+   
+    mbri <- as.matrix(tdmtio)
+    word.freqbri <- sort(
+      rowSums(mbri),
+      decreasing = T
+    )
+    pal <- brewer.pal(7, "BuGn")[-(1:4)]
+    minimum_awal <- data.frame(table(word.freqbri))
+    minimum <- as.numeric(minimum_awal[minimum_awal$Freq<30,][1,1])
+        minimum2 <- as.numeric(minimum_awal[minimum_awal$Freq<30,][1,1])
+    
+  socmed <- data.frame(df_instagram$namalengkap[1],akun,sum(scores$positive))
+    names(socmed) <- c("Nama","Username","score sentiment")
+
+    
+    df$date_posting = with_tz(df$date_posting)
+    timeDistbri = ggplot(df, aes(date_posting)) + 
+      geom_density(aes(fill = tipe_posting), alpha = .5,show.legend = T)
+      scale_fill_discrete(guide = 'none') +
+      xlab('All tweets')
+    kategori1 <- findAssocs(dtm_tm,c('ISIS','teroris','bom'), 0.20)
+    kategori2 <- findAssocs(dtm_tm,c('sex','porn','porno','bokep','bugil','ngentot'), 0.20)
+    
+    count_video<-df_instagram %>%
+      group_by(video) %>% 
+      summarise(count=n())
+    colors <- c('rgb(211,94,96)', 'rgb(114,147,203)')#, 'rgb(144,103,167)', 'rgb(171,104,87)', 'rgb(114,147,203)')
+    #plot_ly(count_video, labels = ~video, values = ~count, type = 'pie', textposition = 'inside',
+    #        textinfo = 'label+percent', insidetextfont = list(color = '#FFFFFF'), hoverinfo = 'text',
+    #        text = ~paste('$', video, ' billions'), marker = list(colors = colors,
+    #                                                               line = list(color = '#FFFFFF', width = 1)),
+            #The 'pull' attribute can also be used to create space between the sectors
+    #        showlegend = FALSE) %>%
+    #  layout(title = 'Target Percentage',
+    #         xaxis = list(showgrid = FALSE, zeroline = FALSE, showticklabels = FALSE),
+    #         yaxis = list(showgrid = FALSE, zeroline = FALSE, showticklabels = FALSE))
+    
+    count_jenisupdate <-df_instagram %>%
+      group_by(jenisupdate) %>% 
+      summarise(count=n())
+    
+    #colors <- c('rgb(211,94,96)', 'rgb(114,147,203)')#, 'rgb(144,103,167)', 'rgb(171,104,87)', 'rgb(114,147,203)')
+    #plot_ly(count_jenisupdate, labels = ~jenisupdate, values = ~count, type = 'pie', textposition = 'inside',
+    #        textinfo = 'label+percent', insidetextfont = list(color = '#FFFFFF'), hoverinfo = 'text',
+    #        text = ~paste('$', jenisupdate, ' billions'), marker = list(colors = colors,
+    #                                                              line = list(color = '#FFFFFF', width = 1)),
+            #The 'pull' attribute can also be used to create space between the sectors
+    #        showlegend = FALSE) %>%
+    #  layout(title = 'Target Percentage',
+    #         xaxis = list(showgrid = FALSE, zeroline = FALSE, showticklabels = FALSE),
+    #         yaxis = list(showgrid = FALSE, zeroline = FALSE, showticklabels = FALSE))
+    df_instagram$time <- as.factor(df_instagram$time)
+    
+    count_time <-df_instagram %>%
+      group_by(time) %>% 
+      summarise(count=n())
+    colors <- c('rgb(211,94,96)', 'rgb(114,147,203)')#, 'rgb(144,103,167)', 'rgb(171,104,87)', 'rgb(114,147,203)')
+    #plot_ly(count_time, labels = ~time, values = ~count, type = 'histogram', textposition = 'inside',
+    #        textinfo = 'label+percent', insidetextfont = list(color = '#FFFFFF'), hoverinfo = 'text',
+    #        text = ~paste('$', time, ' billions'), marker = list(colors = colors,
+    #                                                              line = list(color = '#FFFFFF', width = 1)),
+          #The 'pull' attribute can also be used to create space between the sectors
+     #       showlegend = FALSE) %>%
+     # layout(title = 'Target Percentage',
+     #        xaxis = list(showgrid = FALSE, zeroline = FALSE, showticklabels = FALSE),
+    #         yaxis = list(showgrid = FALSE, zeroline = FALSE, showticklabels = FALSE))
+    #hist(as.numeric(df_instagram$time),main="Waktu Ngepost",ylab = "",xlab = "time")
+    
+    theme_agon <- theme(legend.key = element_rect(fill="black"),
+                        legend.background = element_rect(color="white", fill="#263238"),
+                        plot.subtitle = element_text(size=6, color="white"),
+                        panel.background = element_rect(fill="#dddddd"),
+                        panel.border = element_rect(fill=NA),
+                        panel.grid.minor.x = element_blank(),
+                        panel.grid.major.x = element_blank(),
+                        panel.grid.major.y = element_line(color="darkgrey", linetype=2),
+                        panel.grid.minor.y = element_blank(),
+                        plot.background = element_rect(fill="#263238"),
+                        text = element_text(color="white"),
+                        axis.text = element_text(color="white"))
+    perbandingan <- ggplot(melt(df_instagram[1,6:7]), aes(x = variable, y = value)) + geom_bar(stat = "identity") + labs(title="Perbandingan Follower dan Friends", subtitle="untuk melihat ratio jumlah follower dan followingnya") + coord_flip() + theme_agon
+    
+```
+
+```{r}
+#wordcloud
+ wordcloud(
+        words = names(word.freqbri),
+        freq = word.freqbri,
+        min.freq = minimum,
+        random.order = F,
+        colors = palette_light()
+      )
+```
+
+```{r}
+#Follower and Following
+perbandingan
+```
+
+```{r}
+#sentimen plot
+qplot(factor(polarity), data=scores[scores$score!=0,], geom="bar", fill=factor(polarity))+xlab("Polarity Categories") + ylab("Frequency") + ggtitle("User Sentiment")
+```
+
+```{r}
+#posting time
+timeDistbri
+```
+
+```{r}
+#most freq words
+ggplot(kataygdigunakan, aes(x=term, y=freq)) + geom_bar(stat="identity") +
+        xlab("Terms") + ylab("Count") + coord_flip() +
+        theme(axis.text=element_text(size=7))
+```
+
+```{r}
+#video posting
+plot_ly(count_video, labels = ~video, values = ~count, type = 'pie', textposition = 'inside',
+       textinfo = 'label+percent', insidetextfont = list(color = '#FFFFFF'), hoverinfo = 'text',
+               text = ~paste('$', video, ' billions'), marker = list(colors = colors,
+                                                                      line = list(color = '#FFFFFF', width = 1)),
+              #The 'pull' attribute can also be used to create space between the sectors
+               showlegend = FALSE) %>%
+         layout(title = 'Target Percentage',
+                xaxis = list(showgrid = FALSE, zeroline = FALSE, showticklabels = FALSE),
+                yaxis = list(showgrid = FALSE, zeroline = FALSE, showticklabels = FALSE))
+```
+
+```{r}
+#jenis update
+ plot_ly(count_jenisupdate, labels = ~jenisupdate, values = ~count, type = 'pie', textposition = 'inside',
+              textinfo = 'label+percent', insidetextfont = list(color = '#FFFFFF'), hoverinfo = 'text',
+              text = ~paste('$', jenisupdate, ' billions'), marker = list(colors = colors,
+                                                                    line = list(color = '#FFFFFF', width = 1)),
+      #The 'pull' attribute can also be used to create space between the sectors
+              showlegend = FALSE) %>%
+        layout(title = 'Target Percentage',
+               xaxis = list(showgrid = FALSE, zeroline = FALSE, showticklabels = FALSE),
+               yaxis = list(showgrid = FALSE, zeroline = FALSE, showticklabels = FALSE))
+```
+
+```{r}
+#posting time
+hist(as.numeric(df_instagram$time),main="Waktu Ngepost",ylab = "",xlab = "time")
+```
+
+```{r}
+#word corellation
+Rgraphviz::plot(tdmtio, term = findFreqTerms(tdmtio, lowfreq = minimum2), corThreshold = 0.1, weighting = T)
+```
+
+```{r}
+#jumlah posting
+print(df_instagram$count[1])
+```
+
+```{r}
+#Status Verified
+print(ifelse(df_instagram$verified[1]==FALSE,"Not Verified","Verified"))
+```
+
+```{r}
+#Status private
+print(ifelse(df_instagram$private[1]==FALSE,"NO","YES"))
+```
+
+```{r}
+socmed
+```
+
+```{r}
+#engament
+print(paste0(round(mean(df_instagram$likes)/length(df_instagram$count[1]),2),"%"))
+```
+
+```{r}
+#asosiasi dengan teroris
+print(sort(as.data.frame(unlist(kategori1)),decreasing = T))[1,1]
+```
+
+```{r}
+#asosiasi dengan Pornografi
+print(sort(as.data.frame(unlist(kategori2)),decreasing = T))[1,1]
+```
+
+```{r}
+kable(term)
+```
+
+```{r}
+#plot topics
+ggplot(topics2, aes(date, fill = term[topic])) +
+        geom_density(position = "stack")
+```
+
+```{r}
+topikfinal <- topicmodels::posterior(lda_model, dtm_tm)[["topics"]]
+post <- topicmodels::posterior(lda_model)
+```
+
+```{r, include=FALSE}
+#korelasi antar topik
+cor_mat <- cor(t(post[["terms"]]))
+cor_mat <- abs(cor_mat)
+cor_mat[ cor_mat < .05 ] <- 0
+diag(cor_mat) <- 0
+
+graph <- graph.adjacency(cor_mat, weighted=TRUE, mode="lower")
+
+
+E(graph)$edge.width <- E(graph)$weight
+V(graph)$label <- paste("Topic", V(graph))
+V(graph)$size <- colSums(post[["topics"]])
+
+par(mar=c(0, 0, 3, 0))
+set.seed(110)
+
+```
+
+```{r}
+#korelasi antar topik
+plot.igraph(graph, edge.width = E(graph)$edge.width, 
+    edge.color = "blue", vertex.color = "orange", 
+    vertex.frame.color = NA, vertex.label.color = "grey30")
+```
+
+
